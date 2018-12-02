@@ -1,0 +1,714 @@
+---
+title: "Airbnb Price Modeling"
+author: "Andrew Zhang"
+date: "11/22/2018"
+output: pdf_document
+---
+
+```{r}
+setwd("/Users/andrewzhang/Desktop/School/Graduate/MA678/AirBnb-Price-Model")
+airbnb2014 <- read.csv("tomslee_airbnb_los_angeles_0050_2014-09-01.csv")
+airbnb2016 <- read.csv("tomslee_airbnb_los_angeles_0699_2016-12-17.csv")
+airbnb2017 <- read.csv("tomslee_airbnb_los_angeles_1422_2017-07-08.csv")
+rent <- read.csv("Rent_Price__LA_.csv")
+```
+
+```{r, rent}
+#install.packages("esquisse")
+library(esquisse)
+library(ggplot2)
+library(dplyr)
+
+str(airbnb2016)
+colSums(is.na(airbnb2016))
+
+airbnb2016$borough <- NULL
+airbnb2016$last_modified <- NULL
+airbnb2016$minstay <- NULL
+airbnb2016 <- na.omit(airbnb2016)
+
+rent$Year <- factor(rent$Year)
+rent <- rent[rent$Year == "2016",]
+rent <- na.omit(rent)
+
+summary(airbnb2016)
+
+neigh_count <- airbnb2016 %>% 
+  group_by(neighborhood) %>% 
+  count(neighborhood, sort = TRUE)
+
+rent_agg <- rent %>% 
+  group_by(Neighborhood) %>% 
+  summarize(Average = mean(Amount))
+
+airbnb2016 <- merge(airbnb2016, neigh_count)
+colnames(airbnb2016)[1] <- c("Neighborhood")
+colnames(airbnb2016)[12] <- c("Neighborhood Count")
+airbnb2016 <- merge(airbnb2016, rent_agg, by = "Neighborhood")
+
+airbnb2016_agg <- airbnb2016[airbnb2016$`Neighborhood Count` > 200,]
+
+str(airbnb2017)
+airbnb2017$room_id <- NULL
+airbnb2017$survey_id <- NULL
+airbnb2017$host_id <- NULL
+airbnb2017$country <- NULL
+airbnb2017$borough <- NULL
+airbnb2017$bathrooms <- NULL
+airbnb2017$minstay <- NULL
+airbnb2017$last_modified <- NULL
+airbnb2017$location <- NULL
+airbnb2017$city <- NULL
+
+str(airbnb2014)
+airbnb2014$room_id <- NULL
+airbnb2014$host_id <- NULL
+airbnb2014$borough <- NULL
+airbnb2014$minstay <- NULL
+airbnb2014$last_modified <- NULL
+airbnb2014 <- na.omit(airbnb2014)
+```
+
+
+```{r, correlation}
+#install.packages("corrplot")
+library(corrplot)
+num_airbnb <- airbnb2016_agg[c(-1, -2, -3, -4)]
+
+airbnb_cor <- cor(num_airbnb)
+head(round(airbnb_cor, 3))
+
+corrplot(airbnb_cor, method = "ellipse")
+```
+
+## Note bedrooms/accommodations, price/accommodations, satisfaction/reviews, price/bedrooms
+
+```{r}
+ggplot(data = airbnb2016_agg) +
+  aes(x = Neighborhood) +
+  geom_bar(fill = '#0c4c8a') +
+  theme(axis.text.x = element_text(angle=90, hjust=1)) + 
+  labs(title = "Neighborhood Count")
+
+ggplot(data = airbnb2016_agg) +
+  aes(x = reviews, y = log(price)) +
+  geom_point(color = '#0c4c8a') +
+  theme_minimal() +
+  facet_wrap(vars(room_type)) +
+  labs(title = "Reviews vs. Prices")
+
+## Can see that prices for apartments are more expensive than private rooms which are more expensive than shared rooms
+ggplot(data = airbnb2016_agg) +
+  aes(x = reviews, y = log(price), color = room_type) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Reviews vs. Price")
+
+ggplot(data = airbnb2016_agg) +
+  aes(x = overall_satisfaction, y = log(price)) +
+  geom_point(color = '#0c4c8a') +
+  theme_minimal() +
+  facet_wrap(vars(room_type)) + 
+  labs(title = "Satisfaction vs. Price")
+
+## Entire apartment has a positive trend in accomodations whereas its harder to see for other rental types
+ggplot(data = airbnb2016_agg) +
+  aes(x = accommodates, y = log(price), color = room_type) +
+  geom_point() +
+  theme_minimal() +
+  facet_wrap(vars(room_type)) + 
+  labs(title = "Accommodations vs. Price")
+
+ggplot(data = airbnb2016_agg) +
+  aes(x = log(price)) +
+  geom_histogram(bins = 30, fill = '#0c4c8a') +
+  theme_minimal() +
+  facet_wrap(vars(room_type)) +
+  labs(title = "Price Count")
+
+ggplot(data = airbnb2016_agg) +
+  aes(x = bedrooms) +
+  geom_histogram(bins = 30, fill = '#0c4c8a') +
+  theme_minimal() +
+  labs(title = "Bedroom Counts")
+```
+
+
+```{r, aggregate}
+## Look at an aggregate of the prices per Neighborhood vs the average rental price per Neighborhood in 2014
+airbnb_agg1 <- airbnb2016_agg %>% 
+  group_by(Neighborhood, room_type) %>% 
+  summarize(Price_Ave = mean(price)) 
+
+airbnb_agg2 <- airbnb2016_agg %>% 
+  group_by(Neighborhood, room_type) %>% 
+  summarize(Reviews = sum(reviews))
+
+airbnb_agg3 <- airbnb2016_agg %>% 
+  group_by(Neighborhood, room_type) %>% 
+  summarize(Satisfaction_Ave = mean(overall_satisfaction)) 
+
+airbnb_agg4 <- airbnb2016_agg %>% 
+  group_by(Neighborhood, room_type) %>% 
+  summarize(Accomm_Ave = mean(accommodates)) 
+
+airbnb_agg5 <- airbnb2016_agg %>% 
+  group_by(Neighborhood, room_type) %>% 
+  summarize(Num_Bedrooms = mean(bedrooms))
+
+airbnb_agg6 <- airbnb2016_agg %>% 
+  group_by(Neighborhood, room_type) %>% 
+  summarize(Neighborhood_Count = mean(`Neighborhood Count`))
+
+airbnb_agg7 <- airbnb2016_agg %>% 
+  group_by(Neighborhood, room_type) %>% 
+  summarize(Rent_Average = mean(Average))
+
+airbnb2016_aggdf <- merge(airbnb_agg1, airbnb_agg2)
+airbnb2016_aggdf <- merge(airbnb2016_aggdf, airbnb_agg3)
+airbnb2016_aggdf <- merge(airbnb2016_aggdf, airbnb_agg4)
+airbnb2016_aggdf <- merge(airbnb2016_aggdf, airbnb_agg5)
+airbnb2016_aggdf <- merge(airbnb2016_aggdf, airbnb_agg6)
+airbnb2016_aggdf <- merge(airbnb2016_aggdf, airbnb_agg7)
+
+## Create separate aggregated datasets for each room type
+apart2016 <- airbnb2016_aggdf %>% 
+  filter(airbnb2016_aggdf$room_type == "Entire home/apt")
+
+private2016 <- airbnb2016_aggdf %>% 
+  filter(airbnb2016_aggdf$room_type == "Private room")
+
+shared2016 <- airbnb2016_aggdf %>% 
+  filter(airbnb2016_aggdf$room_type == "Shared room")
+
+## Aggregated data EDA
+## Rent average vs. Airbnb prices
+rent1 <- ggplot(data = apart2016) +
+  aes(x = Rent_Average, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() + 
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Apartment Ave. Rent vs. Price")
+
+rent2 <- ggplot(data = private2016) +
+  aes(x = Rent_Average, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() + 
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Private Ave. Rent vs. Price")
+
+rent3 <- ggplot(data = shared2016) +
+  aes(x = Rent_Average, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() + 
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Shared Ave. Rent vs. Price")
+
+## Reviews vs Airbnb prices
+ggplot(data = apart2016) +
+  aes(x = Reviews, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() +
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Apartment Reviews vs. Average Price")
+
+ggplot(data = private2016) +
+  aes(x = Reviews, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() +
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Private Room Reviews vs. Average Price")
+
+ggplot(data = shared2016) +
+  aes(x = Reviews, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() +
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Shared Room Reviews vs. Average Price")
+
+## Accommodation average vs. Airbnb prices
+accom1 <- ggplot(data = apart2016) +
+  aes(x = Accomm_Ave, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() +
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Apartment Ave. Accommodation vs. Price")
+
+accom2 <- ggplot(data = private2016) +
+  aes(x = Accomm_Ave, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() +
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Private Ave. Accommodation vs. Price")
+
+accom3 <- ggplot(data = shared2016) +
+  aes(x = Accomm_Ave, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() +
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Shared Ave. Accommodation vs. Price")
+
+## Neighborhood Count vs. Airbnb price
+ggplot(data = apart2016) +
+  aes(x = Neighborhood_Count, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() +
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Apartment Neighborhood Count vs. Average Price")
+
+ggplot(data = private2016) +
+  aes(x = Neighborhood_Count, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  theme_minimal() +
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Private Neighborhood Count vs. Average Price")
+
+ggplot(data = shared2016) +
+  aes(x = Neighborhood_Count, y = log(Price_Ave), color = Neighborhood) +
+  geom_point() +
+  geom_smooth(method='lm') +
+  theme_minimal() +
+  theme(legend.key.size=unit(2,"point"), legend.text = element_text(size = 12, family = "Arial")) +
+  labs(title = "Shared Neighborhood Count vs. Average Price")
+
+install.packages("ggpubr")
+library(ggpubr)
+ggarrange(rent1, rent2, rent3, ncol=1, nrow = 3, common.legend = TRUE, legend="right")
+ggarrange(accom1, accom2, accom3, ncol=1, nrow = 3, common.legend = TRUE, legend="right")
+
+```
+
+```{r, split data}
+airbnb2016_agg$room_id <- NULL
+airbnb2016_agg$host_id <- NULL
+airbnb2016_agg$`Neighborhood Count` <- NULL
+airbnb2016_agg$Average <- NULL
+
+airbnb2014_agg <- airbnb2014[airbnb2014$neighborhood %in% airbnb2016_agg$Neighborhood,]
+airbnb2017_agg <- airbnb2017[airbnb2017$neighborhood %in% airbnb2016_agg$Neighborhood,]
+
+colnames(airbnb2014_agg)[2] <- "Neighborhood"
+colnames(airbnb2017_agg)[2] <- "Neighborhood"
+
+## 2016 Dataset
+airbnb16_apart <- airbnb2016_agg[airbnb2016_agg$room_type == "Entire home/apt",]
+airbnb16_apart$room_type <- NULL
+
+airbnb16_private <- airbnb2016_agg[airbnb2016_agg$room_type == "Private room",]
+airbnb16_private$room_type <- NULL
+
+airbnb16_share <- airbnb2016_agg[airbnb2016_agg$room_type == "Shared room",]
+airbnb16_share$room_type <- NULL
+
+## 2017 Dataset
+airbnb17_apart <- airbnb2017_agg[airbnb2017_agg$room_type == "Entire home/apt",]
+airbnb17_apart$room_type <- NULL
+
+airbnb17_private <- airbnb2017_agg[airbnb2017_agg$room_type == "Private room",]
+airbnb17_private$room_type <- NULL
+
+airbnb17_share <- airbnb2017_agg[airbnb2017_agg$room_type == "Shared room",]
+airbnb17_share$room_type <- NULL
+
+## 2014 Dataset
+airbnb14_apart <- airbnb2014_agg[airbnb2014_agg$room_type == "Entire home/apt",]
+airbnb14_apart$room_type <- NULL
+
+airbnb14_private <- airbnb2014_agg[airbnb2014_agg$room_type == "Private room",]
+airbnb14_private$room_type <- NULL
+
+airbnb14_share <- airbnb2014_agg[airbnb2014_agg$room_type == "Shared room",]
+airbnb14_share$room_type <- NULL
+```
+
+
+```{r, linear regression}
+apart_lm1 <- lm(price ~. , data = airbnb16_apart)
+summary(apart_lm1)
+plot(apart_lm1)
+
+apart_lm2 <- lm(log(price) ~., data = airbnb16_apart)
+summary(apart_lm2)
+plot(apart_lm2)
+
+apart_lm3 <- lm(log(price) ~ Neighborhood + reviews + overall_satisfaction + accommodates + bedrooms + latitude  + longitude + accommodates*bedrooms, data = airbnb16_apart)
+summary(apart_lm3)
+plot(apart_lm3)
+
+private_lm1 <- lm(price ~., data = airbnb16_private)
+summary(private_lm1)
+plot(private_lm1)
+
+private_lm2 <- lm(log(price) ~., data = airbnb16_private)
+summary(private_lm2)
+plot(private_lm2)
+
+private_lm3 <- lm(log(price) ~ Neighborhood + reviews + overall_satisfaction + accommodates + bedrooms + latitude  + longitude + accommodates*bedrooms, data = airbnb16_private)
+summary(private_lm3)
+plot(private_lm3)
+
+share_lm1 <- lm(price ~., data = airbnb16_share)
+summary(share_lm1)
+plot(share_lm1)
+
+share_lm2 <- lm(log(price) ~., data = airbnb16_share)
+summary(share_lm2)
+plot(share_lm2)
+
+share_lm3 <- lm(log(price) ~ Neighborhood + reviews + overall_satisfaction + accommodates + bedrooms + latitude  + longitude + accommodates*bedrooms, data = airbnb16_share)
+summary(share_lm3)
+plot(share_lm3)
+```
+
+```{r, remove outliers}
+## Cooks Distance
+cooksd_apart1 <- cooks.distance(apart_lm1)
+cooksd_apart2 <- cooks.distance(apart_lm2)
+cooksd_apart3 <- cooks.distance(apart_lm3)
+
+cooksd_private1 <- cooks.distance(private_lm1)
+cooksd_private2 <- cooks.distance(private_lm2)
+cooksd_private3 <- cooks.distance(private_lm3)
+
+cooksd_share1 <- cooks.distance(share_lm1)
+cooksd_share2 <- cooks.distance(share_lm2)
+cooksd_share3 <- cooks.distance(share_lm3)
+
+## Influential Rows
+influential1 <- as.numeric(names(cooksd_apart1))[cooksd_apart1 > (4/nrow(airbnb16_apart))]
+influential2 <- as.numeric(names(cooksd_apart2))[cooksd_apart2 > (4/nrow(airbnb16_apart))]
+influential3 <- as.numeric(names(cooksd_apart3))[cooksd_apart3 > (4/nrow(airbnb16_apart))]
+
+influential4 <- as.numeric(names(cooksd_private1))[cooksd_private1 > (4/nrow(airbnb16_apart))]
+influential5 <- as.numeric(names(cooksd_private2))[cooksd_private2 > (4/nrow(airbnb16_apart))]
+influential6 <- as.numeric(names(cooksd_private3))[cooksd_private3 > (4/nrow(airbnb16_apart))]
+
+influential7 <- as.numeric(names(cooksd_share1))[cooksd_share1 > (4/nrow(airbnb16_apart))]
+influential8 <- as.numeric(names(cooksd_share2))[cooksd_share2 > (4/nrow(airbnb16_apart))]
+influential9 <- as.numeric(names(cooksd_share3))[cooksd_share3 > (4/nrow(airbnb16_apart))]
+
+## Cleaned df
+airbnb16_apart1 <- airbnb16_apart[!as.numeric(rownames(airbnb16_apart)) %in% influential1,]
+airbnb16_apart2 <- airbnb16_apart[!as.numeric(rownames(airbnb16_apart)) %in% influential2,]
+airbnb16_apart3 <- airbnb16_apart[!as.numeric(rownames(airbnb16_apart)) %in% influential3,]
+
+airbnb16_private1 <- airbnb16_private[!as.numeric(rownames(airbnb16_private)) %in% influential4,]
+airbnb16_private2 <- airbnb16_private[!as.numeric(rownames(airbnb16_private)) %in% influential5,]
+airbnb16_private3 <- airbnb16_private[!as.numeric(rownames(airbnb16_private)) %in% influential6,]
+
+airbnb16_share1 <- airbnb16_share[!as.numeric(rownames(airbnb16_share)) %in% influential7,]
+airbnb16_share2 <- airbnb16_share[!as.numeric(rownames(airbnb16_share)) %in% influential8,]
+airbnb16_share3 <- airbnb16_share[!as.numeric(rownames(airbnb16_share)) %in% influential9,]
+```
+
+```{r, plot cooks}
+## Plot Cook's Distance
+plot(cooksd_apart1, pch = "*", cex = 2)
+abline(h = 4*mean(cooksd_apart1, na.rm = T), col = "red")
+
+plot(cooksd_apart2, pch = "*", cex = 2)
+abline(h = 4*mean(cooksd_apart2, na.rm = T), col = "red")
+
+plot(cooksd_apart3, pch = "*", cex = 2)
+abline(h = 4*mean(cooksd_apart3, na.rm = T), col = "red")
+
+plot(cooksd_private1, pch = "*", cex = 2)
+abline(h = 4*mean(cooksd_private1, na.rm = T), col = "red")
+
+plot(cooksd_private2, pch = "*", cex = 2)
+abline(h = 4*mean(cooksd_private2, na.rm = T), col = "red")
+
+plot(cooksd_private3, pch = "*", cex = 2)
+abline(h = 4*mean(cooksd_private3, na.rm = T), col = "red")
+
+plot(cooksd_share1, pch = "*", cex = 2)
+abline(h = 4*mean(cooksd_apart1, na.rm = T), col = "red")
+
+plot(cooksd_share2, pch = "*", cex = 2)
+abline(h = 4*mean(cooksd_apart2, na.rm = T), col = "red")
+
+plot(cooksd_share3, pch = "*", cex = 2)
+abline(h = 4*mean(cooksd_apart3, na.rm = T), col = "red")
+```
+
+```{r, retest lm}
+apart_lm1 <- lm(price ~. , data = airbnb16_apart1)
+apart_lm2 <- lm(log(price) ~., data = airbnb16_apart2)
+apart_lm3 <- lm(log(price) ~ Neighborhood + reviews + overall_satisfaction + accommodates + bedrooms + latitude  + longitude + accommodates*bedrooms, data = airbnb16_apart3)
+
+plot(apart_lm1)
+plot(apart_lm2)
+plot(apart_lm3)
+
+private_lm1 <- lm(price ~., data = airbnb16_private1)
+private_lm2 <- lm(log(price) ~., data = airbnb16_private2)
+private_lm3 <- lm(log(price) ~ Neighborhood + reviews + overall_satisfaction + accommodates + bedrooms + latitude  + longitude + accommodates*bedrooms, data = airbnb16_private3)
+
+plot(private_lm1)
+plot(private_lm2)
+plot(private_lm3)
+
+share_lm1 <- lm(price ~., data = airbnb16_share1)
+share_lm2 <- lm(log(price) ~., data = airbnb16_share2)
+share_lm3 <- lm(log(price) ~ Neighborhood + reviews + overall_satisfaction + accommodates + bedrooms + latitude  + longitude + accommodates*bedrooms, data = airbnb16_share3)
+
+plot(share_lm1)
+plot(share_lm2)
+plot(share_lm3)
+
+## glm for AIC
+apart_glm1 <- glm(price ~. , data = airbnb16_apart1)
+apart_glm2 <- glm(log(price) ~., data = airbnb16_apart2)
+apart_glm3 <- glm(log(price) ~ Neighborhood + reviews + overall_satisfaction + accommodates + bedrooms + latitude  + longitude + accommodates*bedrooms, data = airbnb16_apart3)
+
+private_glm1 <- glm(price ~., data = airbnb16_private1)
+private_glm2 <- glm(log(price) ~., data = airbnb16_private2)
+private_glm3 <- glm(log(price) ~ Neighborhood + reviews + overall_satisfaction + accommodates + bedrooms + latitude  + longitude + accommodates*bedrooms, data = airbnb16_private3)
+
+share_glm1 <- glm(price ~., data = airbnb16_share1)
+share_glm2 <- glm(log(price) ~., data = airbnb16_share2)
+share_glm3 <- glm(log(price) ~ Neighborhood + reviews + overall_satisfaction + accommodates + bedrooms + latitude  + longitude + accommodates*bedrooms, data = airbnb16_share3)
+
+summary(apart_lm1)
+summary(apart_lm2)
+summary(apart_lm3)
+summary(private_lm1)
+summary(private_lm2)
+summary(private_lm3)
+summary(share_lm1)
+summary(share_lm2)
+summary(share_lm3)
+
+summary(apart_glm1)
+summary(apart_glm2)
+summary(apart_glm3)
+summary(private_glm1)
+summary(private_glm2)
+summary(private_glm3)
+summary(share_glm1)
+summary(share_glm2)
+summary(share_glm3)
+
+## Plot Residual vs Fitted
+par(mfrow = c(3,1))
+plot(apart_lm1, which = 1, caption = "LM Residual vs. Fitted")
+plot(apart_lm2, which = 1, caption = "Log-Linear Residual vs. Fitted")
+plot(apart_lm3, which = 1, caption = "Log-Linear with Interaction Residual vs. Fitted")
+
+par(mfrow = c(3,1))
+plot(private_lm1, which = 1, caption = "LM Residual vs. Fitted")
+plot(private_lm2, which = 1, caption = "Log-Linear Residual vs. Fitted")
+plot(private_lm3, which = 1, caption = "Log-Linear with Interaction Residual vs. Fitted")
+
+par(mfrow = c(3,1))
+plot(share_lm1, which = 1, caption = "LM Residual vs. Fitted")
+plot(share_lm2, which = 1, caption = "Log-Linear Residual vs. Fitted")
+plot(share_lm3, which = 1, caption = "Log-Linear with Interaction Residual vs. Fitted")
+
+## Normal QQ-Plot
+par(mfrow = c(3,1))
+plot(apart_lm1, which = 2, caption = NA, main = "LM Normal QQ")
+plot(apart_lm2, which = 2, caption = NA, main = "Log-Linear Normal QQ")
+plot(apart_lm3, which = 2, caption = NA, main = "Log-Linear with Interaction Normal QQ")
+
+par(mfrow = c(3,1))
+plot(private_lm1, which = 2, caption = NA, main = "LM Normal QQ")
+plot(private_lm2, which = 2, caption = NA, main = "Log-Linear Normal QQ")
+plot(private_lm3, which = 2, caption = NA, main = "Log-Linear with Interaction Normal QQ")
+
+par(mfrow = c(3,1))
+plot(share_lm1, which = 2, caption = NA, main = "LM Normal QQ")
+plot(share_lm2, which = 2, caption = NA, main = "Log-Linear Normal QQ")
+plot(share_lm3, which = 2, caption = NA, main = "Log-Linear with Interaction Normal QQ")
+```
+
+```{r, multilevel}
+library(lme4)
+library(arm)
+
+## Apartment
+apart_ml1 <- lmer(price ~ reviews + overall_satisfaction + accommodates + bedrooms + latitude + longitude + (1|Neighborhood), data = airbnb16_apart1)
+display(apart_ml1)
+plot(apart_ml1, main = "Apartment LM Mulilevel Residual vs. Fitted")
+
+apart_ml2 <- lmer(log(price) ~ reviews + overall_satisfaction + accommodates + bedrooms + latitude + longitude + (1|Neighborhood), data = airbnb16_apart2)
+display(apart_ml2)
+plot(apart_ml2, main = "Apartment Log Linear Mulilevel Residual vs. Fitted")
+
+apart_ml3 <- lmer(log(price) ~ reviews + overall_satisfaction + accommodates + bedrooms + latitude + longitude + accommodates*bedrooms + (1|Neighborhood), data = airbnb16_apart3)
+display(apart_ml3)
+plot(apart_ml3, main = "Apartment Log Linear Interaction Mulilevel Residual vs. Fitted")
+
+## Private
+private_ml1 <- lmer(price ~ reviews + overall_satisfaction + accommodates + bedrooms + latitude + longitude + (1|Neighborhood), data = airbnb16_private1)
+display(private_ml1)
+plot(private_ml1, main = "Private LM Multilevel Residual vs. Fitted")
+
+private_ml2 <- lmer(log(price) ~ reviews + overall_satisfaction + accommodates + bedrooms + latitude + longitude + (1|Neighborhood), data = airbnb16_private2)
+display(private_ml2)
+plot(private_ml2, main = "Private Log Linear Multilevel Residual vs. Fitted")
+
+private_ml3 <- lmer(log(price) ~ reviews + overall_satisfaction + accommodates + bedrooms + latitude + longitude + accommodates*bedrooms + (1|Neighborhood), data = airbnb16_private3)
+display(private_ml3)
+plot(private_ml3, main = "Private Log Linear Interaction Multilevel Residual vs. Fitted")
+
+## Shared
+share_ml1 <- lmer(price ~ reviews + overall_satisfaction + accommodates + bedrooms + latitude + longitude + (1|Neighborhood), data = airbnb16_share1)
+display(share_ml1)
+plot(share_ml1, main = "Shared LM Multilevel Residual vs. Fitted")
+
+share_ml2 <- lmer(log(price) ~ reviews + overall_satisfaction + accommodates + bedrooms + latitude + longitude + (1|Neighborhood), data = airbnb16_share2)
+display(share_ml2)
+plot(share_ml2, main = "Shared Log Linear Multilevel Residual vs. Fitted")
+
+share_ml3 <- lmer(log(price) ~ reviews + overall_satisfaction + accommodates + bedrooms + latitude + longitude + accommodates*bedrooms + (1|Neighborhood), data = airbnb16_share3)
+display(share_ml3)
+plot(share_ml3, main = "Shared Log Linear Interaction Multilevel Residual vs. Fitted")
+
+display(apart_ml1)
+display(apart_ml2)
+display(apart_ml3)
+
+display(private_ml1)
+display(private_ml2)
+display(private_ml3)
+
+display(share_ml1)
+display(share_ml2)
+display(share_ml3)
+```
+```{r}
+airbnb14_apart <- airbnb14_apart[airbnb14_apart$Neighborhood %in% airbnb16_apart3$Neighborhood,]
+airbnb14_private <- airbnb14_private[airbnb14_private$Neighborhood %in% airbnb16_private2$Neighborhood,]
+airbnb14_share <- airbnb14_share[airbnb14_share$Neighborhood %in% airbnb16_share3$Neighborhood,]
+
+airbnb17_apart <- airbnb17_apart[airbnb17_apart$Neighborhood %in% airbnb16_apart3$Neighborhood,]
+airbnb17_private <- airbnb17_private[airbnb17_private$Neighborhood %in% airbnb16_private2$Neighborhood,]
+airbnb17_share <- airbnb17_share[airbnb17_share$Neighborhood %in% airbnb16_share3$Neighborhood,]
+```
+
+```{r, predictions 2014/2017}
+## Linear Regression
+## Create predictions for 2014 data(validation)
+apart14_pred <- data.frame(predict(apart_lm3, airbnb14_apart, interval = "prediction"))
+private14_pred <- data.frame(predict(private_lm2, airbnb14_private, interval = "prediction"))
+share14_pred <- data.frame(predict(share_lm3, airbnb14_share, interval = "prediction"))
+
+## Create predictions for 2017 data(validation)
+apart17_pred <- data.frame(predict(apart_lm3, airbnb17_apart, interval = "prediction"))
+private17_pred <- data.frame(predict(private_lm2, airbnb17_private, interval = "prediction"))
+share17_pred <- data.frame(predict(share_lm3, airbnb17_share, interval = "prediction"))
+
+## Multilevel Predictions
+## Create predictions for 2014 data(validation)
+apart14_predml <- data.frame(predict(apart_ml3, airbnb14_apart, interval = "prediction"))
+private14_predml <- data.frame(predict(private_ml2, airbnb14_private, interval = "prediction"))
+share14_predml <- data.frame(predict(share_ml3, airbnb14_share, interval = "prediction"))
+
+## Create predictions for 2017 data(validation)
+apart17_predml <- data.frame(predict(apart_ml3, airbnb17_apart, interval = "prediction"))
+private17_predml <- data.frame(predict(private_ml2, airbnb17_private, interval = "prediction"))
+share17_predml <- data.frame(predict(share_ml3, airbnb17_share, interval = "prediction"))
+
+## 2014 Comparison Between All Models
+## Apartment
+apartpred_14 <- data.frame(log(airbnb14_apart$price))
+apartpred_14$LM <- cbind(apart14_pred$fit)
+apartpred_14$ML <- cbind(apart14_predml$predict.apart_ml..airbnb14_apart..interval....prediction..)
+apartpred_14$Type <- "Apart"
+colnames(apartpred_14)[1] <- "Price"
+
+## Private Room
+privatepred_14 <- data.frame(log(airbnb14_private$price))
+privatepred_14$LM <- cbind(private14_pred$fit)
+privatepred_14$ML <- cbind(private14_predml$predict.private_ml..airbnb14_private..interval....prediction..)
+privatepred_14$Type <- "Private"
+colnames(privatepred_14)[1] <- "Price"
+
+## Shared Room
+sharedpred_14 <- data.frame(log(airbnb14_share$price))
+sharedpred_14$LM <- cbind(share14_pred$fit)
+sharedpred_14$ML <- cbind(share14_predml$predict.share_ml..airbnb14_share..interval....prediction..)
+sharedpred_14$Type <- "Shared"
+colnames(sharedpred_14)[1] <- "Price"
+
+## 2017 Comaprison Between All Models
+## Apartment
+apartpred_17 <- data.frame(log(airbnb17_apart$price))
+apartpred_17$LM <- cbind(apart17_pred$fit)
+apartpred_17$ML <- cbind(apart17_predml$predict.apart_ml..airbnb17_apart..interval....prediction..)
+apartpred_17$Type <- "Apart"
+colnames(apartpred_17)[1] <- "Price"
+
+## Private Room
+privatepred_17 <- data.frame(log(airbnb17_private$price))
+privatepred_17$LM <- cbind(private17_pred$fit)
+privatepred_17$ML <- cbind(private17_predml$predict.private_ml..airbnb17_private..interval....prediction..)
+privatepred_17$Type <- "Private"
+colnames(privatepred_17)[1] <- "Price"
+
+## Shared Room
+sharedpred_17 <- data.frame(log(airbnb17_share$price))
+sharedpred_17$LM <- cbind(share17_pred$fit)
+sharedpred_17$ML <- cbind(share17_predml$predict.share_ml..airbnb17_share..interval....prediction..)
+sharedpred_17$Type <- "Shared"
+colnames(sharedpred_17)[1] <- "Price"
+
+## Add indicies for all data
+apartpred_14$Ind <- seq(1:nrow(apartpred_14))
+privatepred_14$Ind <- seq(1:nrow(privatepred_14))
+sharedpred_14$Ind <- seq(1:nrow(sharedpred_14))
+
+apartpred_17$Ind <- seq(1:nrow(apartpred_17))
+privatepred_17$Ind <- seq(1:nrow(privatepred_17))
+sharedpred_17$Ind <- seq(1:nrow(sharedpred_17))
+
+## Melt data for easier visualization
+## 2014
+apartpred14_melt <- reshape2::melt(apartpred_14, c("Type", "Ind"))
+privatepred14_melt <- reshape2::melt(privatepred_14, c("Type", "Ind"))
+sharedpred14_melt <- reshape2::melt(sharedpred_14, c("Type", "Ind"))
+
+## 2017
+apartpred17_melt <- reshape2::melt(apartpred_17, c("Type", "Ind"))
+privatepred17_melt <- reshape2::melt(privatepred_17, c("Type", "Ind"))
+sharedpred17_melt <- reshape2::melt(sharedpred_17, c("Type", "Ind"))
+```
+
+```{r, visualization}
+## Visualize predictions vs actual data
+## 2014 Prediction Comparisons
+pred14_1 <- ggplot(apartpred14_melt) + 
+  geom_line(aes(Ind, value, color = variable)) +
+  theme_minimal() + 
+  labs(title = "2014 Apartment")
+
+pred14_2 <-ggplot(privatepred14_melt) + 
+  geom_line(aes(Ind, value, color = variable)) +
+  theme_minimal() + 
+  labs(title = "2014 Private Room")
+
+pred14_3 <-ggplot(sharedpred14_melt) + 
+  geom_line(aes(Ind, value, color = variable)) +
+  theme_minimal() + 
+  labs(title = "2014 Shared Room")
+
+## 2017 Prediction Comparisons
+pred17_1 <- ggplot(apartpred17_melt) + 
+  geom_line(aes(Ind, value, color = variable)) +
+  theme_minimal() + 
+  labs(title = "2017 Apartment")
+
+pred17_2 <- ggplot(privatepred17_melt) + 
+  geom_line(aes(Ind, value, color = variable)) +
+  theme_minimal() + 
+  labs(title = "2017 Private Room")
+
+pred17_3 <- ggplot(sharedpred17_melt) + 
+  geom_line(aes(Ind, value, color = variable)) +
+  theme_minimal() + 
+  labs(title = "2017 Shared Room")
+
+figure <- ggarrange(pred14_1, pred14_2, pred14_3, pred17_1, pred17_2, pred17_3, ncol=3, nrow = 2, common.legend = TRUE, legend="right")
+annotate_figure(figure, top = text_grob("Prediction vs. Actual"))
+```
